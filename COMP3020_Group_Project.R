@@ -137,3 +137,59 @@ movies$rating_group <- factor(ifelse(movies$vote_average >=
 show_table(as.data.frame(table(Genre = movies$genre_group)),
            col.names = c("Genre group (primary genre)", "Films"))
 summary(movies[, c("vote_average", "vote_count", "popularity", "year")])
+
+##############################################################################
+# HYPOTHESIS TESTING
+##############################################################################
+
+# ---- hypothesis ------------------------------------------------------------
+tab_rating <- table(movies$genre_group, movies$rating_group)
+tab_rating
+
+ct <- chisq.test(tab_rating)
+ct
+min(ct$expected)                         # should be >= 5 for the usual test
+
+# Monte Carlo p-value as a robustness check (as in the Module 3 lab)
+set.seed(3020)
+ct_mc <- chisq.test(tab_rating, simulate.p.value = TRUE, B = 10000)
+ct_mc$p.value
+
+cv_genre <- cramers_v(tab_rating, ct)    # effect size: 0 = none, 1 = perfect
+cv_genre
+
+# ---- hypothesis-posthoc ----------------------------------------------------
+genre_summary <- data.frame(
+  Genre = rownames(tab_rating),
+  Films = as.vector(rowSums(tab_rating)),
+  Mean_rating = round(as.vector(tapply(movies$vote_average, movies$genre_group,
+                                       mean)[rownames(tab_rating)]), 2),
+  Pct_high = round(100 * prop.table(tab_rating, 1)[, "High"], 1),
+  Std_residual_high = round(ct$stdres[, "High"], 2))
+genre_summary <- genre_summary[order(-genre_summary$Mean_rating), ]
+show_table(genre_summary, row.names = FALSE)
+
+# Visual 1: rating distribution by genre (ordered by median)
+gf <- factor(movies$genre_group,
+             levels = names(sort(tapply(movies$vote_average,
+                                        movies$genre_group, median))))
+par(mar = c(4, 9, 3, 1))
+boxplot(movies$vote_average ~ gf, horizontal = TRUE, las = 1, col = "lightblue",
+        main = "TMDb rating by primary genre", xlab = "Average rating (0-10)",
+        ylab = "")
+
+# Visual 2: share of "High" films per genre vs the overall share
+prop_high <- sort(prop.table(tab_rating, 1)[, "High"])
+barplot(prop_high, horiz = TRUE, las = 1, col = "steelblue",
+        main = "Share of films rated High, by genre", xlab = "Proportion High")
+abline(v = mean(movies$rating_group == "High"), lty = 2, col = "red")
+par(mar = c(5, 4, 4, 2) + 0.1)
+
+# ---- hypothesis-sensitivity ------------------------------------------------
+movies$rating_band <- cut(movies$vote_average,
+                          breaks = quantile(movies$vote_average, c(0, 1/3, 2/3, 1)),
+                          labels = c("Low", "Medium", "High"),
+                          include.lowest = TRUE)
+tab_band <- table(movies$genre_group, movies$rating_band)
+ct_band  <- chisq.test(tab_band)
+ct_band
